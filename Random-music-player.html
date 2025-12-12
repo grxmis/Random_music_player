@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Τυχαίος Αναπαραγωγέας Μουσικής</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#9aa6b2;--accent:#4fd1c5}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:linear-gradient(180deg,#071426,#0b1220); color:#e6eef6; min-height:100vh; margin:0; display:flex; align-items:center; justify-content:center}
+    .app{width:940px; max-width:96%; background:rgba(255,255,255,0.03); border-radius:12px; padding:20px; box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 12px 0; font-size:20px}
+    .controls{display:flex; gap:8px; align-items:center; margin-bottom:12px}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06); padding:8px 12px;border-radius:8px;color:inherit;cursor:pointer}
+    button.primary{background:var(--accent); color:#022; border:none}
+    .file-drop{border:2px dashed rgba(255,255,255,0.04); padding:16px; border-radius:8px; text-align:center; color:var(--muted); margin-bottom:12px}
+    .playlist{max-height:220px; overflow:auto; border-top:1px solid rgba(255,255,255,0.03); padding-top:8px}
+    .track{display:flex; justify-content:space-between; align-items:center; padding:8px; border-radius:6px}
+    .track.active{background:linear-gradient(90deg, rgba(79,209,197,0.08), rgba(79,209,197,0.02));}
+    .track .title{flex:1; margin-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .progress{width:100%; height:6px; background:rgba(255,255,255,0.04); border-radius:6px; overflow:hidden; margin:10px 0}
+    .progress > b{display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#2dd4bf)}
+    .small{font-size:13px; color:var(--muted)}
+    .footer{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px}
+    input[type=file]{display:none}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Τυχαίος Αναπαραγωγέας Μουσικής</h1>
+    <div class="controls">
+      <label class="primary" id="addFilesBtn" title="Προσθήκη τραγουδιών">Προσθήκη αρχείων</label>
+      <button id="shuffleBtn" title="Ανάμειξη/Shuffle">Shuffle: <span id="shuffleState">ON</span></button>
+      <button id="loopBtn" title="Επανάληψη τρέχοντος">Loop: <span id="loopState">OFF</span></button>
+      <button id="prevBtn">⏮️</button>
+      <button id="playBtn">▶️</button>
+      <button id="nextBtn">⏭️</button>
+      <button id="stopBtn">⏹️</button>
+      <label class="small" id="countLabel">0 τραγούδια</label>
+    </div>
+
+    <div id="dropArea" class="file-drop">Σύρε τα μουσικά αρχεία εδώ ή πάτησε "Προσθήκη αρχείων". Υποστηρίζονται: mp3, m4a, wav, ogg.</div>
+    <input id="fileInput" type="file" multiple accept="audio/*">
+
+    <div class="progress" title="Πρόοδος αναπαραγωγής"><b id="progressBar"></b></div>
+    <div class="small" id="timeLabel">00:00 / 00:00</div>
+
+    <div class="playlist" id="playlist"></div>
+
+    <div class="footer">
+      <div class="small">Σημείωση: Τα αρχεία παίζονται τοπικά — τα δεν αποστέλλονται πουθενά.</div>
+      <div>
+        <button id="clearBtn">Καθαρισμός λίστας</button>
+      </div>
+    </div>
+
+    <audio id="player" preload="metadata"></audio>
+  </div>
+
+  <script>
+    // Elements
+    const fileInput = document.getElementById('fileInput');
+    const addFilesBtn = document.getElementById('addFilesBtn');
+    const dropArea = document.getElementById('dropArea');
+    const playlistEl = document.getElementById('playlist');
+    const player = document.getElementById('player');
+    const playBtn = document.getElementById('playBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const shuffleBtn = document.getElementById('shuffleBtn');
+    const loopBtn = document.getElementById('loopBtn');
+    const shuffleState = document.getElementById('shuffleState');
+    const loopState = document.getElementById('loopState');
+    const progressBar = document.getElementById('progressBar');
+    const timeLabel = document.getElementById('timeLabel');
+    const countLabel = document.getElementById('countLabel');
+    const clearBtn = document.getElementById('clearBtn');
+
+    // State
+    let tracks = []; // {file, url, name}
+    let currentIndex = -1;
+    let isPlaying = false;
+    let shuffle = true;
+    let loop = false;
+
+    // Helpers
+    function formatTime(sec){
+      if (!isFinite(sec)) return '00:00';
+      const s = Math.floor(sec % 60).toString().padStart(2,'0');
+      const m = Math.floor(sec/60).toString().padStart(2,'0');
+      return `${m}:${s}`;
+    }
+
+    function updateCount(){
+      countLabel.textContent = `${tracks.length} τραγούδια`;
+    }
+
+    function renderPlaylist(){
+      playlistEl.innerHTML = '';
+      tracks.forEach((t,i)=>{
+        const div = document.createElement('div');
+        div.className = 'track' + (i===currentIndex? ' active':'');
+        div.innerHTML = `<div class="title">${i+1}. ${escapeHtml(t.name)}</div><div><button data-i="${i}">▶</button></div>`;
+        playlistEl.appendChild(div);
+        div.querySelector('button').addEventListener('click', ()=>{ playIndex(i); });
+      });
+    }
+
+    function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    function addFiles(fileList){
+      const supported = ['audio/mpeg','audio/mp3','audio/x-m4a','audio/m4a','audio/wav','audio/ogg','audio/x-wav'];
+      for (const f of fileList){
+        // accept most audio types; we will still try to play unknown ones
+        const url = URL.createObjectURL(f);
+        tracks.push({file:f, url, name: f.name});
+      }
+      updateCount();
+      renderPlaylist();
+      if (currentIndex === -1 && tracks.length) playIndex( Math.floor(Math.random()*tracks.length) );
+    }
+
+    // Playback
+    function playIndex(i){
+      if (i<0 || i>=tracks.length) return stopPlayback();
+      currentIndex = i;
+      const t = tracks[i];
+      player.src = t.url;
+      player.play();
+      isPlaying = true;
+      updateUI();
+      renderPlaylist();
+    }
+
+    function playNext(){
+      if (tracks.length===0) return;
+      if (loop){ player.currentTime = 0; player.play(); return; }
+      if (shuffle){
+        let next = Math.floor(Math.random()*tracks.length);
+        if (tracks.length>1){ while (next === currentIndex) next = Math.floor(Math.random()*tracks.length); }
+        playIndex(next);
+      } else {
+        const next = (currentIndex + 1) % tracks.length;
+        playIndex(next);
+      }
+    }
+
+    function playPrev(){
+      if (tracks.length===0) return;
+      if (player.currentTime > 3) { player.currentTime = 0; player.play(); return; }
+      if (!shuffle){
+        const prev = (currentIndex - 1 + tracks.length) % tracks.length;
+        playIndex(prev);
+      } else {
+        playIndex( Math.floor(Math.random()*tracks.length) );
+      }
+    }
+
+    function stopPlayback(){ player.pause(); player.removeAttribute('src'); player.load(); isPlaying=false; currentIndex=-1; updateUI(); renderPlaylist(); }
+
+    function updateUI(){
+      playBtn.textContent = isPlaying? '⏸️':'▶️';
+      shuffleState.textContent = shuffle? 'ON' : 'OFF';
+      loopState.textContent = loop? 'ON' : 'OFF';
+    }
+
+    // Events
+    addFilesBtn.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', (e)=> addFiles(e.target.files));
+
+    // Drag/drop
+    ['dragenter','dragover'].forEach(ev=> dropArea.addEventListener(ev,(e)=>{ e.preventDefault(); dropArea.style.borderColor = 'rgba(79,209,197,0.6)'; }));
+    ['dragleave','drop'].forEach(ev=> dropArea.addEventListener(ev,(e)=>{ e.preventDefault(); dropArea.style.borderColor = ''; }));
+    dropArea.addEventListener('drop', (e)=>{ addFiles(e.dataTransfer.files); });
+
+    playBtn.addEventListener('click', ()=>{
+      if (!isPlaying){
+        if (currentIndex===-1 && tracks.length){ playIndex( Math.floor(Math.random()*tracks.length) ); }
+        else { player.play(); isPlaying=true; updateUI(); }
+      } else { player.pause(); isPlaying=false; updateUI(); }
+    });
+
+    nextBtn.addEventListener('click', ()=> playNext());
+    prevBtn.addEventListener('click', ()=> playPrev());
+    stopBtn.addEventListener('click', ()=> stopPlayback());
+
+    shuffleBtn.addEventListener('click', ()=>{ shuffle = !shuffle; updateUI(); });
+    loopBtn.addEventListener('click', ()=>{ loop = !loop; updateUI(); });
+
+    clearBtn.addEventListener('click', ()=>{
+      // revoke object URLs
+      tracks.forEach(t=> URL.revokeObjectURL(t.url));
+      tracks = []; currentIndex=-1; player.pause(); player.removeAttribute('src'); player.load(); renderPlaylist(); updateCount(); updateUI();
+    });
+
+    // Player updates
+    player.addEventListener('timeupdate', ()=>{
+      const p = (player.currentTime / player.duration) || 0;
+      progressBar.style.width = (p*100)+'%';
+      timeLabel.textContent = `${formatTime(player.currentTime)} / ${formatTime(player.duration)}`;
+    });
+
+    player.addEventListener('ended', ()=>{
+      playNext();
+    });
+
+    player.addEventListener('play', ()=>{ isPlaying=true; updateUI(); });
+    player.addEventListener('pause', ()=>{ isPlaying=false; updateUI(); });
+
+    // click on progress bar to seek
+    document.querySelector('.progress').addEventListener('click', (e)=>{
+      if (!player.duration) return;
+      const rect = e.target.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pct = x / rect.width;
+      player.currentTime = pct * player.duration;
+    });
+
+    // keyboard shortcuts: space play/pause, n next, p prev
+    window.addEventListener('keydown', (e)=>{
+      if (e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
+      if (e.key.toLowerCase() === 'n') nextBtn.click();
+      if (e.key.toLowerCase() === 'p') prevBtn.click();
+    });
+
+    updateUI();
+
+    // clean up object URLs when leaving
+    window.addEventListener('unload', ()=>{ tracks.forEach(t=> URL.revokeObjectURL(t.url)); });
+  </script>
+</body>
+</html>
