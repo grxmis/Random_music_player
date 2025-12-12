@@ -10,8 +10,12 @@
     .app{width:940px; max-width:96%; background:rgba(255,255,255,0.03); border-radius:12px; padding:20px; box-shadow:0 10px 30px rgba(2,6,23,0.6)}
     h1{margin:0 0 12px 0; font-size:20px}
     .controls{display:flex; gap:8px; align-items:center; margin-bottom:12px}
-    button{background:transparent;border:1px solid rgba(255,255,255,0.06); padding:8px 12px;border-radius:8px;color:inherit;cursor:pointer}
-    button.primary{background:var(--accent); color:#022; border:none}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.04);color:inherit;cursor:pointer;font-weight:600}
+    .btn:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(2,6,23,0.5)}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),#2dd4bf); color:#022; border:none}
+    .btn svg{width:18px;height:18px;display:block}
+    .btn .state{font-size:12px;color:var(--muted);margin-left:6px}
+
     .file-drop{border:2px dashed rgba(255,255,255,0.04); padding:16px; border-radius:8px; text-align:center; color:var(--muted); margin-bottom:12px}
     .playlist{max-height:220px; overflow:auto; border-top:1px solid rgba(255,255,255,0.03); padding-top:8px}
     .track{display:flex; justify-content:space-between; align-items:center; padding:8px; border-radius:6px}
@@ -22,24 +26,28 @@
     .small{font-size:13px; color:var(--muted)}
     .footer{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px}
     input[type=file]{display:none}
+    #clearBtn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 10px;border-radius:8px;color:inherit;cursor:pointer}
   </style>
 </head>
 <body>
   <div class="app">
     <h1>Τυχαίος Αναπαραγωγέας Μουσικής</h1>
     <div class="controls">
-      <label class="primary" id="addFilesBtn" title="Προσθήκη τραγουδιών">Προσθήκη αρχείων</label>
-      <button id="shuffleBtn" title="Ανάμειξη/Shuffle">Shuffle: <span id="shuffleState">ON</span></button>
-      <button id="loopBtn" title="Επανάληψη τρέχοντος">Loop: <span id="loopState">OFF</span></button>
-      <button id="prevBtn">⏮️</button>
-      <button id="playBtn">▶️</button>
-      <button id="nextBtn">⏭️</button>
-      <button id="stopBtn">⏹️</button>
+      <label class="btn primary" id="addFilesBtn" title="Προσθήκη τραγουδιών">➕ Προσθήκη αρχείων</label>
+      <button class="btn" id="shuffleBtn" title="Ανάμειξη/Shuffle"><span id="shuffleIcon"></span> <span id="shuffleState" class="state">ON</span></button>
+      <button class="btn" id="loopBtn" title="Επανάληψη τρέχοντος"><span id="loopIcon"></span> <span id="loopState" class="state">OFF</span></button>
+      <div style="flex:1"></div>
+      <button class="btn" id="prevBtn" title="Previous"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11 12L20 18V6L11 12Z" fill="currentColor"/><path d="M4 6V18H6V6H4Z" fill="currentColor"/></svg></button>
+      <button class="btn" id="playBtn" title="Play/Pause"></button>
+      <button class="btn" id="nextBtn" title="Next"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6L13 12L4 18V6Z" fill="currentColor"/><path d="M16 6H18V18H16V6Z" fill="currentColor"/></svg></button>
+      <button class="btn" id="stopBtn" title="Stop"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg></button>
       <label class="small" id="countLabel">0 τραγούδια</label>
     </div>
 
     <div id="dropArea" class="file-drop">Σύρε τα μουσικά αρχεία εδώ ή πάτησε "Προσθήκη αρχείων". Υποστηρίζονται: mp3, m4a, wav, ogg.</div>
     <input id="fileInput" type="file" multiple accept="audio/*">
+
+    <div id="nowPlaying" style="margin:8px 0;font-weight:bold;font-size:16px"></div>
 
     <div class="progress" title="Πρόοδος αναπαραγωγής"><b id="progressBar"></b></div>
     <div class="small" id="timeLabel">00:00 / 00:00</div>
@@ -120,12 +128,22 @@
       if (currentIndex === -1 && tracks.length) playIndex( Math.floor(Math.random()*tracks.length) );
     }
 
+    // SVG icons (global for updateUI)
+    const PLAY_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>';
+    const PAUSE_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"/></svg>';
+    const NEXT_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l9 6-9 6V6zm12 0h2v12h-2V6z" fill="currentColor"/></svg>';
+    const PREV_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 6l-9 6 9 6V6zm-12 0H6v12h2V6z" fill="currentColor"/></svg>';
+    const STOP_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>';
+    const SHUFFLE_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 3h5v5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 6h3a5 5 0 0 1 4 2l3 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18h3a5 5 0 0 0 4-2l3-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const LOOP_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 12a9 9 0 1 0-9 9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v4h-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
     // Playback
     function playIndex(i){
       if (i<0 || i>=tracks.length) return stopPlayback();
       currentIndex = i;
-      const t = tracks[i];
-      player.src = t.url;
+      const track = tracks[i];
+      document.getElementById('nowPlaying').textContent = 'Τώρα παίζει: ' + track.name;
+      player.src = track.url;
       player.play();
       isPlaying = true;
       updateUI();
@@ -156,12 +174,20 @@
       }
     }
 
-    function stopPlayback(){ player.pause(); player.removeAttribute('src'); player.load(); isPlaying=false; currentIndex=-1; updateUI(); renderPlaylist(); }
+    function stopPlayback(){ player.pause(); player.removeAttribute('src'); player.load(); isPlaying=false; currentIndex=-1; updateUI(); renderPlaylist(); document.getElementById('nowPlaying').textContent = ''; }
 
+    // UI update function
     function updateUI(){
-      playBtn.textContent = isPlaying? '⏸️':'▶️';
-      shuffleState.textContent = shuffle? 'ON' : 'OFF';
-      loopState.textContent = loop? 'ON' : 'OFF';
+      // main play/pause icon
+      playBtn.innerHTML = isPlaying ? PAUSE_SVG : PLAY_SVG;
+      prevBtn.innerHTML = PREV_SVG;
+      nextBtn.innerHTML = NEXT_SVG;
+      stopBtn.innerHTML = STOP_SVG;
+      // shuffle & loop with small state label
+      shuffleBtn.innerHTML = SHUFFLE_SVG + ' <span class="state">' + (shuffle? 'ON' : 'OFF') + '</span>';
+      loopBtn.innerHTML = LOOP_SVG + ' <span class="state">' + (loop? 'ON' : 'OFF') + '</span>';
+      // count
+      updateCount();
     }
 
     // Events
@@ -210,7 +236,7 @@
     // click on progress bar to seek
     document.querySelector('.progress').addEventListener('click', (e)=>{
       if (!player.duration) return;
-      const rect = e.target.getBoundingClientRect();
+      const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const pct = x / rect.width;
       player.currentTime = pct * player.duration;
@@ -223,6 +249,7 @@
       if (e.key.toLowerCase() === 'p') prevBtn.click();
     });
 
+    // initial UI
     updateUI();
 
     // clean up object URLs when leaving
